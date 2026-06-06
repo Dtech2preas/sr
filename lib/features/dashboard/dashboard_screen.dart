@@ -102,7 +102,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text('Enable Cloudflare Tunnel (Internet Access):'),
+            const Text('Enable WebRTC P2P Tunnel (Internet Access):'),
                   Switch(
                     value: serverManager.tunnelEnabled,
                     onChanged: (value) => serverManager.setTunnelEnabled(value),
