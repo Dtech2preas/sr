@@ -17,6 +17,7 @@ class DashboardScreen extends StatefulWidget {
 
 class _DashboardScreenState extends State<DashboardScreen> {
   Timer? _uptimeTimer;
+  Timer? _debounceTimer;
 
   @override
   void initState() {
@@ -32,6 +33,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   void dispose() {
     _uptimeTimer?.cancel();
+    _debounceTimer?.cancel();
     super.dispose();
   }
   Future<void> _pickFolder(BuildContext context) async {
@@ -94,6 +96,37 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                 ],
               ),
+              const SizedBox(height: 8),
+              const Divider(),
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text('Enable Cloudflare Tunnel (Internet Access):'),
+                  Switch(
+                    value: serverManager.tunnelEnabled,
+                    onChanged: (value) => serverManager.setTunnelEnabled(value),
+                  ),
+                ],
+              ),
+              if (serverManager.tunnelEnabled) ...[
+                const SizedBox(height: 8),
+                TextFormField(
+                  initialValue: serverManager.subdomain,
+                  decoration: const InputDecoration(
+                    labelText: 'Subdomain (e.g. portfolio)',
+                    border: OutlineInputBorder(),
+                    suffixText: '.ulenabler.co.za',
+                  ),
+                  onChanged: (value) {
+                    if (_debounceTimer?.isActive ?? false) _debounceTimer!.cancel();
+                    _debounceTimer = Timer(const Duration(seconds: 1), () {
+                      serverManager.setSubdomain(value);
+                    });
+                  },
+                ),
+                const SizedBox(height: 8),
+              ],
             ],
             const SizedBox(height: 8),
             ElevatedButton.icon(
@@ -232,6 +265,31 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                 ],
               ),
+              if (serverManager.tunnelEnabled && serverManager.subdomain.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    const Text('Internet URL: ', style: TextStyle(fontWeight: FontWeight.bold)),
+                    Expanded(
+                      child: SelectableText(
+                        'https://${serverManager.subdomain}.ulenabler.co.za',
+                        style: TextStyle(color: Theme.of(context).colorScheme.secondary),
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.copy),
+                      tooltip: 'Copy URL',
+                      onPressed: () {
+                        Clipboard.setData(ClipboardData(text: 'https://${serverManager.subdomain}.ulenabler.co.za'));
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Internet URL copied to clipboard')),
+                        );
+                      },
+                    ),
+                  ],
+                ),
+              ],
               const SizedBox(height: 16),
               Center(
                 child: Container(
@@ -241,7 +299,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: QrImageView(
-                    data: 'http://${serverManager.ipAddress}:${serverManager.port}',
+                    data: serverManager.tunnelEnabled && serverManager.subdomain.isNotEmpty
+                        ? 'https://${serverManager.subdomain}.ulenabler.co.za'
+                        : 'http://${serverManager.ipAddress}:${serverManager.port}',
                     version: QrVersions.auto,
                     size: 150.0,
                   ),
