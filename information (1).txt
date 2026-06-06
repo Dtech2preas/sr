@@ -1,0 +1,107 @@
+# D-TECH Quiz Platform System Overview
+
+## What is this platform?
+D-TECH is an educational platform designed for Grade 1-12 learners in South Africa. It helps students practice past papers and CAPS/NSC curriculum questions (like Mathematics, Physical Sciences, and more) through an interactive, gamified quiz system.
+Users can track their progress, earn points, buy cosmetic items, and compete on leaderboards.
+
+## How does it work?
+The platform has two main ways it is accessed:
+1. **The Website:** Accessible via `https://quiz.dtech-services.co.za`, this is a standard web application built using HTML, CSS, and JavaScript.
+2. **The Android App:** A native Android application that serves as a "wrapper" for the website. It loads the exact same website inside the app using a tool called a "WebView". However, the app includes special native code to handle offline caching, download certificates directly to the phone, and handle advertisements correctly.
+
+### The Technology (Backend & Data)
+- **Frontend:** Plain HTML, CSS, and Vanilla JavaScript.
+- **Backend APIs (Cloudflare Workers):** The website communicates with a serverless backend hosted on Cloudflare Workers. This backend handles things like generating authentication tokens, serving leaderboards, caching large data, and preventing abuse.
+- **Database (Firebase Realtime Database):** When a user finishes a quiz or earns points, that data is instantly saved and synced to Google's Firebase Realtime Database. It allows for fast, real-time updates without overwhelming the server.
+- **Storage (Cloudflare KV):** Used to store global, heavily accessed data like School leaderboards, Top 100 global rankings, and public user profiles.
+- **Monetization:** The platform uses "Monetag" and "profitablecpmrate" for advertisements. Users can earn a virtual currency called "D-TECH Points" by interacting with these ads, which they can then spend in the platform's virtual store.
+
+## High-Level Flow
+1. **Entry:** A user visits `index.html` (the landing page) or opens the Android App.
+2. **Authentication:** They log in or sign up via Firebase Authentication (`login.html` / `signup.html`).
+3. **Dashboard:** Once logged in, they are taken to the `dashboard.html`, which fetches their real-time stats from Firebase and displays their progress.
+4. **Taking a Quiz:** The user navigates to `subjects.html` to pick a subject, and then takes a quiz in `quiz.html`. As they answer questions, the app checks if they are correct.
+5. **Saving Results:** When the quiz is done, JavaScript calculates their score, XP (Experience Points), and D-TECH Points, and writes this back to Firebase.
+6. **Leaderboards & Store:** The user can view how they rank against others (`leaderboard.html`) or spend their earned D-TECH points on profile cosmetics (`store.html`).
+
+---
+
+# File-by-File Breakdown
+
+## 1. Web HTML Files (The Frontend)
+### `index.html`
+**Technical Summary:** The SEO-optimized root landing page. It provides public information about the platform, features, and links to login or sign up. It does not require authentication.
+**Normal Vocabulary:** The platform's homepage. It's like the front window of a shop, showing new visitors what the app is about and encouraging them to join.
+
+### `login.html` & `signup.html`
+**Technical Summary:** Handles user authentication using Firebase Auth. `login.html` authenticates existing users, while `signup.html` registers new users, capturing initial metadata (grade, province, school) and initializing their Firebase Realtime Database user node.
+**Normal Vocabulary:** The doors to the platform. Here, users either create a new account or sign into their existing one using their email and password.
+
+### `dashboard.html`
+**Technical Summary:** The main hub for authenticated users. It fetches the user's real-time data from Firebase, displays their current XP, points, recent activity (Daily Progress), and links to all other modules.
+**Normal Vocabulary:** The user's personal home screen. It shows them their current level, how many points they have, and what quizzes they've taken today.
+
+### `subjects.html`
+**Technical Summary:** Reads the `map.json` file to generate a dynamic list of subjects and topics available for the user's specific grade.
+**Normal Vocabulary:** The curriculum menu. It lets the student pick which subject (like Math or Science) and which topic they want to practice.
+
+### `quiz.html`
+**Technical Summary:** The core quiz engine. It loads the specific JSON dataset for the chosen topic, presents questions sequentially, validates answers locally (hiding correct/incorrect feedback until the end), and upon completion, calculates XP/points and writes the result to Firebase. It also features `html2canvas` to generate downloadable certificates.
+**Normal Vocabulary:** The actual test room. Here, students read questions, pick answers, and get their final score at the end. They can also download a certificate if they do well.
+
+### `weekly_quiz.html`
+**Technical Summary:** Similar to `quiz.html`, but explicitly for weekly exam papers. It parses `weekly_map.json` to organize exams into an accordion by "Current Week" and older weeks.
+**Normal Vocabulary:** The weekly exam section. It organizes big, exam-style practice papers week-by-week so students can track their long-term studying.
+
+### `leaderboard.html` & `global_leaderboard.html`
+**Technical Summary:** `leaderboard.html` shows local or grade-specific rankings, while `global_leaderboard.html` fetches a cached Top 100 list from Cloudflare KV. They implement CQRS (Command Query Responsibility Segregation) to read data without overwhelming the main Firebase database.
+**Normal Vocabulary:** The high-score boards. Students can see who has the most XP and compete to be the best in their school or across the whole country.
+
+### `store.html`
+**Technical Summary:** The interface for the "Cosmetic Currency" system. Users spend D-TECH Points here. The items (avatars, borders, themes) are dynamically loaded from an accordion UI. Purchases are transacted securely by communicating with the Cloudflare Worker (`worker.js`) to validate prices against a backend `STORE_CATALOG`.
+**Normal Vocabulary:** The virtual shop. Students can use the points they earned by doing quizzes to buy cool profile pictures, colorful borders, and app themes.
+
+### `profile.html` & `public_profile.html`
+**Technical Summary:** `profile.html` allows users to edit their own profile, equip purchased cosmetics, and view their stats. `public_profile.html` allows users to view another user's public stats and equipped cosmetics, fetching data via the Cloudflare Worker `/api/public-user/` endpoint.
+**Normal Vocabulary:** `profile.html` is the user's personal ID card where they can change how they look. `public_profile.html` is how they look to other people on the platform.
+
+### `earn_points.html`
+**Technical Summary:** The monetization hub. Embeds Monetag ad scripts and `profitablecpmrate.com` links. Tracks ad engagements (e.g., watching an ad for 10 seconds) and rewards users by executing Firebase Realtime Database transactions to increment their points. It uses native Android hooks (`window.onAdOpened`) to handle external ad links safely in the app.
+**Normal Vocabulary:** The "Earn Points" section. Users can watch ads or click links to earn extra D-TECH points to spend in the store.
+
+### `stats.html`
+**Technical Summary:** Displays detailed analytical data for the user, summarizing their performance across different subjects over time.
+**Normal Vocabulary:** The report card. It gives the student a detailed breakdown of what they are good at and what they need to practice more.
+
+### `test_run_grades.html`, `test_run_subjects.html`, `test_run_quiz.html`
+**Technical Summary:** A localized, unauthenticated version of the platform. Limits quizzes to 10 questions and hides detailed explanations. Uses `localStorage` instead of Firebase to maintain state.
+**Normal Vocabulary:** The free trial mode. It lets people try out the app and do a few questions without having to make an account first.
+
+### `admin.html`
+**Technical Summary:** A secured, hidden dashboard for administrators. Uses a single optimized backend API request to fetch all user accounts and calculate platform statistics (DAU, average scores).
+**Normal Vocabulary:** The secret control panel for the app owners to see how many people are using the app and how well they are doing.
+
+### `test.html`
+**Technical Summary:** A sandbox or placeholder file used for developer testing of frontend components or scripts.
+**Normal Vocabulary:** A scratchpad file used by the developers to test new features before releasing them.
+
+---
+
+## 2. Main Android App Files (`android_app`)
+
+The Android application is a "WebView Wrapper". This means the app is essentially a specialized, fullscreen web browser that is hardcoded to only load `https://quiz.dtech-services.co.za`.
+
+### `MainActivity.kt` (app/src/main/java/com/dtech/quizzes/MainActivity.kt)
+**Technical Summary:** The core native file of the Android application.
+- **WebView Setup:** It initializes the `WebView`, enables JavaScript, and loads the website URL.
+- **JavaScript Interfaces:** It injects native Android functions into the web page so the website's JavaScript can talk directly to the phone's hardware.
+  - `AndroidDownloader`: Captures Base64 image data from the website (like a generated certificate) and uses Android's `MediaStore` API to save it directly to the user's phone gallery.
+  - `AndroidCacher`: Downloads the JSON datasets in the background so the app can work offline, showing a native Android progress bar while downloading.
+  - `AndroidExternalBrowser`: Intercepts ad links and opens them in Chrome Custom Tabs to prevent the main WebView from losing its place.
+  - `AndroidExit`: Handles the phone's physical back button to safely close the app.
+- **Ad Tracking:** Overrides window creation to track ad clicks and injects JavaScript (`evaluateJavascript`) back into the website to award points when a user finishes interacting with an ad.
+**Normal Vocabulary:** The brain of the Android app. It opens the website inside the app, but also gives the website superpowers—like the ability to save certificates directly to your phone's photo gallery, download data so you can study without internet, and handle advertisements smoothly without breaking the app.
+
+### `AndroidManifest.xml` (app/src/main/AndroidManifest.xml)
+**Technical Summary:** The configuration file for the Android app. It declares the app's package name, the initial `MainActivity`, and strictly requests necessary permissions from the Android OS, primarily `INTERNET` and `ACCESS_NETWORK_STATE` to allow the WebView to load the site, and `WRITE_EXTERNAL_STORAGE` for older Android versions to save certificates.
+**Normal Vocabulary:** The rulebook for the app. It tells the Android phone what the app is called, what its main screen is, and asks for permission to use the internet and save pictures.
