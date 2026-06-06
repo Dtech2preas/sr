@@ -6,7 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 class CloudflareTunnelService {
-  final String workerUrl = 'wss://odd-paper-88df.dtechxpreas.workers.dev/register';
+  final String workerUrl = 'wss://ulenabler.co.za/register';
   WebSocketChannel? _channel;
   bool _isConnected = false;
   int _localPort = 8080;
