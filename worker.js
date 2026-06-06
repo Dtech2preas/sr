@@ -1,15 +1,11 @@
-// worker.js - Cloudflare Worker for DTech WebSockets using Durable Objects
+// worker.js - Cloudflare Worker for DTech WebSockets (Free Tier)
 
-// This Durable Object manages the WebSocket connection for a specific subdomain
-export class TunnelManager {
-  constructor(state, env) {
-    this.state = state;
-    this.env = env;
-    this.activeWebSocket = null;
-    this.pendingRequests = new Map();
-  }
+// In-memory Map to store WebSocket connections.
+// This works perfectly for testing where your phone and laptop hit the same Cloudflare node.
+const activeTunnels = new Map();
 
-  async fetch(request) {
+export default {
+  async fetch(request, env) {
     const url = new URL(request.url);
 
     // 1. App Registration Route (Phone connecting)
@@ -19,29 +15,37 @@ export class TunnelManager {
         return new Response('Expected Upgrade: websocket', { status: 426 });
       }
 
-      // Check simple PSK for security (must match app side)
+      const subdomain = url.searchParams.get('subdomain');
       const token = url.searchParams.get('token');
-      // In a real app, validate token here against a stored secret
+      
+      if (!subdomain) {
+        return new Response('Missing subdomain parameter', { status: 400 });
+      }
 
       const webSocketPair = new WebSocketPair();
       const [client, server] = Object.values(webSocketPair);
 
       server.accept();
-      this.activeWebSocket = server;
+
+      // Create a pending requests map for this specific connection
+      const pendingRequests = new Map();
+
+      // Store both the socket and the pending requests map
+      activeTunnels.set(subdomain, { socket: server, pendingRequests });
 
       server.addEventListener('close', () => {
-        if (this.activeWebSocket === server) {
-          this.activeWebSocket = null;
+        if (activeTunnels.has(subdomain) && activeTunnels.get(subdomain).socket === server) {
+          activeTunnels.delete(subdomain);
         }
       });
-
+      
       server.addEventListener('error', () => {
-        if (this.activeWebSocket === server) {
-          this.activeWebSocket = null;
+        if (activeTunnels.has(subdomain) && activeTunnels.get(subdomain).socket === server) {
+          activeTunnels.delete(subdomain);
         }
       });
 
-      // Handle responses from the phone
+      // Handle responses coming back from the phone
       server.addEventListener('message', (event) => {
         try {
           if (typeof event.data === 'string') {
@@ -50,10 +54,9 @@ export class TunnelManager {
               const reqId = parts[1];
               const statusCode = parseInt(parts[2], 10);
               const headers = JSON.parse(parts[3]);
-
-              if (this.pendingRequests.has(reqId)) {
-                // Update the pending request with headers
-                const reqState = this.pendingRequests.get(reqId);
+              
+              if (pendingRequests.has(reqId)) {
+                const reqState = pendingRequests.get(reqId);
                 reqState.statusCode = statusCode;
                 reqState.headers = headers;
               }
@@ -63,19 +66,19 @@ export class TunnelManager {
             const idLength = view[0];
             const idBytes = view.slice(1, 1 + idLength);
             const reqId = new TextDecoder().decode(idBytes);
-
-            if (this.pendingRequests.has(reqId)) {
-              const reqState = this.pendingRequests.get(reqId);
+            
+            if (pendingRequests.has(reqId)) {
+              const reqState = pendingRequests.get(reqId);
               const bodyBytes = view.slice(1 + idLength);
-
-              // Resolve the original promise that's waiting for the response
+              
+              // Resolve the original promise waiting for the response
               reqState.resolve({
                 body: bodyBytes.length > 0 ? bodyBytes : null,
                 statusCode: reqState.statusCode || 200,
                 headers: reqState.headers || {}
               });
-
-              this.pendingRequests.delete(reqId);
+              
+              pendingRequests.delete(reqId);
             }
           }
         } catch (e) {
@@ -90,15 +93,25 @@ export class TunnelManager {
     }
 
     // 2. Incoming HTTP Traffic Routing (Visitor requesting website)
-    if (!this.activeWebSocket) {
-      return new Response('Phone is not currently connected to this tunnel.', { status: 502 });
+    const host = url.hostname;
+    const domainParts = host.split('.');
+    const subdomain = domainParts.length > 2 ? domainParts[0] : null;
+
+    if (!subdomain) {
+      return new Response('Direct access not allowed. Please use a valid subdomain.', { status: 400 });
+    }
+
+    const tunnel = activeTunnels.get(subdomain);
+
+    if (!tunnel) {
+      return new Response(`No active tunnel found for subdomain: ${subdomain}. Server might be offline.`, { status: 404 });
     }
 
     return new Promise((resolve) => {
       const requestId = crypto.randomUUID();
-
-      // Store state so the websocket listener can resolve it
-      this.pendingRequests.set(requestId, {
+      
+      // Setup the promise to resolve when the phone answers
+      tunnel.pendingRequests.set(requestId, {
         resolve: (responseObj) => {
           clearTimeout(timeoutId);
           resolve(new Response(responseObj.body, {
@@ -108,58 +121,32 @@ export class TunnelManager {
         }
       });
 
-      // Timeout after 30 seconds
+      // 30-second timeout
       const timeoutId = setTimeout(() => {
-        if (this.pendingRequests.has(requestId)) {
-          this.pendingRequests.delete(requestId);
+        if (tunnel.pendingRequests.has(requestId)) {
+          tunnel.pendingRequests.delete(requestId);
           resolve(new Response('Gateway Timeout - Phone took too long to respond', { status: 504 }));
         }
       }, 30000);
 
+      // Send request to phone
       const headersObj = Object.fromEntries(request.headers.entries());
       const reqHeaders = JSON.stringify(headersObj);
-
+      
       request.text().then(bodyText => {
         const payload = `${requestId}|${request.method}|${url.pathname}${url.search}|${reqHeaders}|${bodyText || ''}`;
-        if (this.activeWebSocket) {
-          this.activeWebSocket.send(payload);
-        } else {
+        try {
+          tunnel.socket.send(payload);
+        } catch (e) {
           clearTimeout(timeoutId);
-          this.pendingRequests.delete(requestId);
+          tunnel.pendingRequests.delete(requestId);
           resolve(new Response('Connection lost', { status: 502 }));
         }
       }).catch(e => {
         clearTimeout(timeoutId);
-        this.pendingRequests.delete(requestId);
+        tunnel.pendingRequests.delete(requestId);
         resolve(new Response('Error reading request body', { status: 500 }));
       });
     });
-  }
-}
-
-export default {
-  async fetch(request, env) {
-    const url = new URL(request.url);
-
-    // Get the subdomain either from the hostname (visitor) or query param (phone connecting)
-    let subdomain = null;
-
-    if (url.pathname === '/register') {
-      subdomain = url.searchParams.get('subdomain');
-    } else {
-      const host = url.hostname;
-      const domainParts = host.split('.');
-      subdomain = domainParts.length > 2 ? domainParts[0] : null;
-    }
-
-    if (!subdomain) {
-      return new Response('Direct access not allowed. Please use a valid subdomain.', { status: 400 });
-    }
-
-    // Route the request to the specific Durable Object for this subdomain
-    const id = env.TUNNEL_MANAGER.idFromName(subdomain);
-    const stub = env.TUNNEL_MANAGER.get(id);
-
-    return stub.fetch(request);
   }
 };
