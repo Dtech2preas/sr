@@ -5,6 +5,7 @@ import 'package:shelf/shelf_io.dart' as io;
 import 'package:shelf_static/shelf_static.dart';
 import 'visitor_tracker.dart';
 import 'network_utils.dart';
+import 'preferences_service.dart';
 
 class ServerManager extends ChangeNotifier {
   HttpServer? _server;
@@ -12,18 +13,42 @@ class ServerManager extends ChangeNotifier {
   String _ipAddress = '127.0.0.1';
   int _port = 8080;
   String? _websiteFolder;
+  DateTime? _startTime;
 
   final VisitorTracker visitorTracker;
+  PreferencesService? _prefs;
 
   ServerManager(this.visitorTracker);
 
+  Future<void> init(PreferencesService prefs) async {
+    _prefs = prefs;
+    _websiteFolder = _prefs?.getWebsiteFolder();
+    notifyListeners();
+
+    if (_websiteFolder != null && (_prefs?.getAutoStart() ?? false)) {
+      try {
+        await startServer();
+      } catch (e) {
+        print('Auto-start failed: $e');
+      }
+    }
+  }
+
   bool get isRunning => _isRunning;
+  bool get autoStart => _prefs?.getAutoStart() ?? false;
+  Duration get uptime => _startTime != null ? DateTime.now().difference(_startTime!) : Duration.zero;
   String get ipAddress => _ipAddress;
   int get port => _port;
   String? get websiteFolder => _websiteFolder;
 
   void setWebsiteFolder(String path) {
     _websiteFolder = path;
+    _prefs?.setWebsiteFolder(path);
+    notifyListeners();
+  }
+
+  Future<void> setAutoStart(bool value) async {
+    await _prefs?.setAutoStart(value);
     notifyListeners();
   }
 
@@ -48,6 +73,7 @@ class ServerManager extends ChangeNotifier {
 
       _server = await io.serve(handler, InternetAddress.anyIPv4, _port);
       _isRunning = true;
+      _startTime = DateTime.now();
       visitorTracker.clearLogs();
       notifyListeners();
     } catch (e) {
@@ -64,6 +90,7 @@ class ServerManager extends ChangeNotifier {
     await _server!.close(force: true);
     _server = null;
     _isRunning = false;
+    _startTime = null;
     notifyListeners();
   }
 

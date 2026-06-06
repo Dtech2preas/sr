@@ -1,13 +1,39 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'dart:async';
+import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 import '../../core/server_manager.dart';
 import '../../core/visitor_tracker.dart';
 
-class DashboardScreen extends StatelessWidget {
+class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
 
+  @override
+  State<DashboardScreen> createState() => _DashboardScreenState();
+}
+
+class _DashboardScreenState extends State<DashboardScreen> {
+  Timer? _uptimeTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    // Update UI every minute for uptime
+    _uptimeTimer = Timer.periodic(const Duration(minutes: 1), (timer) {
+      if (mounted) {
+        setState(() {});
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _uptimeTimer?.cancel();
+    super.dispose();
+  }
   Future<void> _pickFolder(BuildContext context) async {
     // Request storage permission first
     final status = await Permission.manageExternalStorage.request();
@@ -37,6 +63,39 @@ class DashboardScreen extends StatelessWidget {
           children: [
             _buildStatusCard(context, serverManager, visitorTracker),
             const SizedBox(height: 16),
+            if (serverManager.websiteFolder == null)
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white10,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.white24),
+                ),
+                child: const Column(
+                  children: [
+                    Icon(Icons.folder_open, size: 48, color: Colors.grey),
+                    SizedBox(height: 8),
+                    Text(
+                      'No folder selected.\nSelect a folder containing your website files (e.g. index.html) to get started.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: Colors.grey),
+                    ),
+                  ],
+                ),
+              ),
+            if (serverManager.websiteFolder != null) ...[
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text('Auto-start server:'),
+                  Switch(
+                    value: serverManager.autoStart,
+                    onChanged: (value) => serverManager.setAutoStart(value),
+                  ),
+                ],
+              ),
+            ],
+            const SizedBox(height: 8),
             ElevatedButton.icon(
               onPressed: () => _pickFolder(context),
               icon: const Icon(Icons.folder),
@@ -72,11 +131,22 @@ class DashboardScreen extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 24),
-            const Text(
-              'Recent Requests:',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Recent Requests:',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                TextButton.icon(
+                  onPressed: visitorTracker.recentRequests.isEmpty
+                      ? null
+                      : () => visitorTracker.clearLogs(),
+                  icon: const Icon(Icons.delete_outline, size: 18),
+                  label: const Text('Clear'),
+                ),
+              ],
             ),
-            const SizedBox(height: 8),
             Expanded(
               child: Container(
                 decoration: BoxDecoration(
@@ -90,9 +160,20 @@ class DashboardScreen extends StatelessWidget {
                   itemBuilder: (context, index) {
                     // Show newest first
                     final reversedIndex = visitorTracker.recentRequests.length - 1 - index;
-                    return Text(
-                      visitorTracker.recentRequests[reversedIndex],
-                      style: const TextStyle(fontFamily: 'monospace'),
+                    final logEntry = visitorTracker.recentRequests[reversedIndex];
+
+                    Color methodColor = Colors.white;
+                    if (logEntry.startsWith('GET')) methodColor = Colors.greenAccent;
+                    else if (logEntry.startsWith('POST')) methodColor = Colors.blueAccent;
+                    else if (logEntry.startsWith('PUT') || logEntry.startsWith('PATCH')) methodColor = Colors.orangeAccent;
+                    else if (logEntry.startsWith('DELETE')) methodColor = Colors.redAccent;
+
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 2.0),
+                      child: Text(
+                        logEntry,
+                        style: TextStyle(fontFamily: 'monospace', color: methodColor),
+                      ),
                     );
                   },
                 ),
@@ -129,14 +210,59 @@ class DashboardScreen extends StatelessWidget {
             Text('Port: ${serverManager.port}'),
             const SizedBox(height: 8),
             if (serverManager.isRunning) ...[
-              const Text('Public URL:', style: TextStyle(fontWeight: FontWeight.bold)),
-              SelectableText(
-                'http://${serverManager.ipAddress}:${serverManager.port}',
-                style: TextStyle(color: Theme.of(context).colorScheme.secondary),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  const Text('Public URL: ', style: TextStyle(fontWeight: FontWeight.bold)),
+                  Expanded(
+                    child: SelectableText(
+                      'http://${serverManager.ipAddress}:${serverManager.port}',
+                      style: TextStyle(color: Theme.of(context).colorScheme.secondary),
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.copy),
+                    tooltip: 'Copy URL',
+                    onPressed: () {
+                      Clipboard.setData(ClipboardData(text: 'http://${serverManager.ipAddress}:${serverManager.port}'));
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('URL copied to clipboard')),
+                      );
+                    },
+                  ),
+                ],
               ),
+              const SizedBox(height: 16),
+              Center(
+                child: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: QrImageView(
+                    data: 'http://${serverManager.ipAddress}:${serverManager.port}',
+                    version: QrVersions.auto,
+                    size: 150.0,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
             ],
-            const SizedBox(height: 8),
             const Divider(),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('Uptime:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                Text(
+                  serverManager.isRunning
+                    ? '${serverManager.uptime.inHours.toString().padLeft(2, '0')}:${(serverManager.uptime.inMinutes % 60).toString().padLeft(2, '0')}'
+                    : '00:00',
+                  style: const TextStyle(fontSize: 18)
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
