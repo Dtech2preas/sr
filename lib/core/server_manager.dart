@@ -6,6 +6,7 @@ import 'package:shelf_static/shelf_static.dart';
 import 'visitor_tracker.dart';
 import 'network_utils.dart';
 import 'preferences_service.dart';
+import 'cloudflare_tunnel_service.dart';
 
 class ServerManager extends ChangeNotifier {
   HttpServer? _server;
@@ -17,6 +18,7 @@ class ServerManager extends ChangeNotifier {
 
   final VisitorTracker visitorTracker;
   PreferencesService? _prefs;
+  final CloudflareTunnelService tunnelService = CloudflareTunnelService();
 
   ServerManager(this.visitorTracker);
 
@@ -36,6 +38,16 @@ class ServerManager extends ChangeNotifier {
 
   bool get isRunning => _isRunning;
   bool get autoStart => _prefs?.getAutoStart() ?? false;
+  bool get tunnelEnabled => _prefs?.getTunnelEnabled() ?? false;
+  String get subdomain => _prefs?.getSubdomain() ?? '';
+  String get tunnelToken {
+    var token = _prefs?.getTunnelToken() ?? '';
+    if (token.isEmpty) {
+      token = DateTime.now().millisecondsSinceEpoch.toString() + '_' + _port.toString();
+      _prefs?.setTunnelToken(token);
+    }
+    return token;
+  }
   Duration get uptime => _startTime != null ? DateTime.now().difference(_startTime!) : Duration.zero;
   String get ipAddress => _ipAddress;
   int get port => _port;
@@ -50,6 +62,35 @@ class ServerManager extends ChangeNotifier {
   Future<void> setAutoStart(bool value) async {
     await _prefs?.setAutoStart(value);
     notifyListeners();
+  }
+
+  Future<void> setTunnelEnabled(bool value) async {
+    await _prefs?.setTunnelEnabled(value);
+    notifyListeners();
+    // Restart tunnel if server is running
+    if (_isRunning) {
+      if (value) {
+        if (subdomain.isNotEmpty) {
+          await tunnelService.start(subdomain, tunnelToken, _port);
+        }
+      } else {
+        tunnelService.stop();
+      }
+      notifyListeners();
+    }
+  }
+
+  Future<void> setSubdomain(String value) async {
+    await _prefs?.setSubdomain(value);
+    notifyListeners();
+    // Restart tunnel if running to update subdomain
+    if (_isRunning && tunnelEnabled) {
+      tunnelService.stop();
+      if (value.isNotEmpty) {
+        await tunnelService.start(value, tunnelToken, _port);
+      }
+      notifyListeners();
+    }
   }
 
   Future<void> startServer() async {
@@ -75,6 +116,11 @@ class ServerManager extends ChangeNotifier {
       _isRunning = true;
       _startTime = DateTime.now();
       visitorTracker.clearLogs();
+
+      if (tunnelEnabled && subdomain.isNotEmpty) {
+        await tunnelService.start(subdomain, tunnelToken, _port);
+      }
+
       notifyListeners();
     } catch (e) {
       print('Failed to start server: $e');
@@ -87,6 +133,7 @@ class ServerManager extends ChangeNotifier {
   Future<void> stopServer() async {
     if (!_isRunning || _server == null) return;
 
+    tunnelService.stop();
     await _server!.close(force: true);
     _server = null;
     _isRunning = false;
