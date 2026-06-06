@@ -6,7 +6,7 @@ import 'package:shelf_static/shelf_static.dart';
 import 'visitor_tracker.dart';
 import 'network_utils.dart';
 import 'preferences_service.dart';
-import 'cloudflare_tunnel_service.dart';
+import 'webrtc_tunnel_service.dart';
 
 class ServerManager extends ChangeNotifier {
   HttpServer? _server;
@@ -18,7 +18,7 @@ class ServerManager extends ChangeNotifier {
 
   final VisitorTracker visitorTracker;
   PreferencesService? _prefs;
-  final CloudflareTunnelService tunnelService = CloudflareTunnelService();
+  final WebRTCTunnelService tunnelService = WebRTCTunnelService();
 
   ServerManager(this.visitorTracker);
 

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "51692706635",
+    "project_id": "sere-a4624",
+    "storage_bucket": "sere-a4624.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:51692706635:android:5bc4944659b46328c826ce",
+        "android_client_info": {
+          "package_name": "com.example.dtech"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCndKlGrJVynzkgZdbHAPj0jj1eFjyrbWA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
