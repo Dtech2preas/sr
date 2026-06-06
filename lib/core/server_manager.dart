@@ -112,7 +112,7 @@ class ServerManager extends ChangeNotifier {
           .addMiddleware(_trackingMiddleware())
           .addHandler(staticHandler);
 
-      _server = await io.serve(handler, InternetAddress.anyIPv4, _port);
+      _server = await io.serve(handler, InternetAddress.anyIPv4, _port, shared: true);
       _isRunning = true;
       _startTime = DateTime.now();
       visitorTracker.clearLogs();
