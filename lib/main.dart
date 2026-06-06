@@ -2,17 +2,26 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'core/server_manager.dart';
 import 'core/visitor_tracker.dart';
+import 'core/preferences_service.dart';
 import 'features/dashboard/dashboard_screen.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  final prefsService = await PreferencesService.init();
+
   runApp(
     MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => VisitorTracker()),
         ChangeNotifierProxyProvider<VisitorTracker, ServerManager>(
-          create: (context) => ServerManager(context.read<VisitorTracker>()),
+          create: (context) {
+            final manager = ServerManager(context.read<VisitorTracker>());
+            manager.init(prefsService);
+            return manager;
+          },
           update: (_, visitorTracker, serverManager) =>
-              serverManager ?? ServerManager(visitorTracker),
+              serverManager ?? ServerManager(visitorTracker)..init(prefsService),
         ),
       ],
       child: const DTechApp(),
