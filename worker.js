@@ -9,11 +9,8 @@ export default {
     const url = new URL(request.url);
 
     // 1. App Registration Route (Phone connecting)
-    if (url.pathname === '/register') {
-      const upgradeHeader = request.headers.get('Upgrade');
-      if (!upgradeHeader || upgradeHeader !== 'websocket') {
-        return new Response('Expected Upgrade: websocket', { status: 426 });
-      }
+    const upgradeHeader = request.headers.get('Upgrade');
+    if (url.pathname === '/register' && upgradeHeader && upgradeHeader === 'websocket') {
 
       const subdomain = url.searchParams.get('subdomain');
       const token = url.searchParams.get('token');
@@ -95,7 +92,9 @@ export default {
     // 2. Incoming HTTP Traffic Routing (Visitor requesting website)
     const host = url.hostname;
     const domainParts = host.split('.');
-    const subdomain = domainParts.length > 2 ? domainParts[0] : null;
+    // Assuming base domain like "ulenabler.co.za" (3 parts). Anything more than 3 parts has a subdomain.
+    // E.g., nex.ulenabler.co.za has 4 parts.
+    const subdomain = domainParts.length > 3 ? domainParts[0] : null;
 
     if (!subdomain) {
       return new Response('Direct access not allowed. Please use a valid subdomain.', { status: 400 });
