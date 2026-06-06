@@ -6,7 +6,6 @@ import 'package:http/http.dart' as http;
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 class CloudflareTunnelService {
-  final String workerUrl = 'wss://ulenabler.co.za/register';
   WebSocketChannel? _channel;
   bool _isConnected = false;
   int _localPort = 8080;
@@ -15,6 +14,8 @@ class CloudflareTunnelService {
 
   Future<void> start(String subdomain, String token, int localPort) async {
     _localPort = localPort;
+    // We connect directly to the subdomain to ensure the worker runs on the same isolate
+    final workerUrl = 'wss://$subdomain.ulenabler.co.za/register';
     final url = Uri.parse('$workerUrl?subdomain=$subdomain&token=$token');
 
     try {
